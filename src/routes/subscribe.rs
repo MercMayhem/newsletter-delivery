@@ -14,6 +14,14 @@ pub async fn subscribe(form: web::Form<Subscription>, pool: web::Data<Pool<Conne
         subscribed_at: Utc::now()
     };
 
+    let request_id = Uuid::new_v4();
+    log::info!(
+            "request_id {request_id} - Adding '{}' '{}' as a new subscriber.",
+            form.email,
+            form.name
+    );
+    
+    log::info!("request_id {request_id} - Saving new subscriber details in the database");
     let mut conn = pool.get().unwrap();
     let result = web::block(move || {
         diesel::insert_into(subscriptions)
@@ -23,9 +31,12 @@ pub async fn subscribe(form: web::Form<Subscription>, pool: web::Data<Pool<Conne
     
     if let Ok(res) = result {
         match res{
-            Ok(_) => HttpResponse::Ok().finish(),
+            Ok(_) => {
+                log::info!("request_id {request_id} - New subscriber has been saved successfully.");
+                HttpResponse::Ok().finish()
+            },
             Err(e) => {
-                println!("Failed to execute query: {}", e);
+                log::error!("request_id {request_id} - Failed to execute query: {:?}", e);
                 HttpResponse::InternalServerError().finish()
             }
         }

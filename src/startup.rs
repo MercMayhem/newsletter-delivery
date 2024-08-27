@@ -2,6 +2,7 @@
 use std::net::TcpListener;
 
 use actix_web::{dev::Server, web, App, HttpServer};
+use actix_web::middleware::Logger;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::PgConnection;
 use crate::routes::health_check::health_check;
@@ -14,6 +15,7 @@ pub fn run(listener: TcpListener, connection_pool: Pool<ConnectionManager<PgConn
 
     let server = HttpServer::new(move || { 
         App::new()
+            .wrap(Logger::default())
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
             .app_data(connection_pool.clone())
