@@ -32,7 +32,8 @@ docker run \
   -e POSTGRES_USER=${DB_USER} \
   -e POSTGRES_PASSWORD=${DB_PASSWORD} \
   -e POSTGRES_DB=${DB_NAME} \
-  -p "${DB_PORT}":5432\
+  -p "${DB_PORT}":5432 \
+  --name "pgresdb" \
   -d postgres \
   postgres -N 1000
   # ^ Increased maximum number of connections for testing purposes
@@ -50,7 +51,5 @@ export DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${
 diesel setup
 
 >&2 echo "Postgres has been migrated, ready to go!"
-
-
 
 

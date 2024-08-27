@@ -1,12 +1,19 @@
 use std::net::TcpListener;
 
+use diesel::{query_dsl::methods::SelectDsl, r2d2::{ConnectionManager, Pool}, Connection, PgConnection, RunQueryDsl};
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use newsletter::{configuration::{get_configuration, DatabaseSettings}, models::Subscription};
+use uuid::Uuid;
+    
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+
 #[actix_web::test]
 async fn health_check_works() {
-    let address = spawn_app();
+    let app = spawn_app();
     let client = reqwest::Client::new();
 
     let response = client
-            .get(format!("{}/health_check", &address))
+            .get(format!("{}/health_check", &app.address))
             .send()
             .await
             .expect("Failed to execute request.");
@@ -17,24 +24,34 @@ async fn health_check_works() {
 
 #[actix_web::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
-    let app_address = spawn_app();
+    use newsletter::schema::subscriptions::dsl::*;
+
+    let app = spawn_app();
     let client = reqwest::Client::new();
+    let mut conn = app.db_pool.get().unwrap();
 
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
     let response = client
-        .post(&format!("{}/subscriptions", &app_address))
+        .post(&format!("{}/subscriptions", &app.address))
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
         .await
         .expect("Failed to execute request.");
 
-    assert_eq!(200, response.status().as_u16())
+    assert_eq!(200, response.status().as_u16());
+
+    let saved = subscriptions.select((email, name))
+                    .first::<Subscription>(&mut conn)
+                    .expect("Failed to fetch saved subscriptions");
+
+    assert_eq!(saved.email, "ursula_le_guin@gmail.com");
+    assert_eq!(saved.name, "le guin");
 }
 
 #[actix_web::test]
 async fn subscribe_returns_a_400_when_data_is_missing() {
-    let app_address = spawn_app();
+    let app = spawn_app();
     let client = reqwest::Client::new();
     let test_cases = vec![
             ("name=le%20guin", "missing the email"),
@@ -44,7 +61,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
 
     for (invalid_body, error_message) in test_cases {
         let response = client
-            .post(&format!("{}/subscriptions", &app_address))
+            .post(&format!("{}/subscriptions", &app.address))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(invalid_body)
             .send()
@@ -61,14 +78,47 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
     }
 }
 
-fn spawn_app() -> String {
+pub struct TestApp {
+    pub address: String,
+    pub db_pool: Pool<ConnectionManager<PgConnection>>,
+}
+
+pub fn run_db_migrations(conn: &mut impl MigrationHarness<diesel::pg::Pg>) {
+    conn.run_pending_migrations(MIGRATIONS).expect("Could not run migrations");
+}
+
+fn configure_database(config: &DatabaseSettings) -> Pool<ConnectionManager<PgConnection>>{
+    let mut connection = PgConnection::establish(&config.connection_string_without_db()).expect("Failed to connect to postgres database (without DB URI used)");
+    let query = format!(r#"CREATE DATABASE "{}";"#, config.database_name);
+    diesel::sql_query(query).execute(&mut connection).expect("Failed to create test database");
+
+    
+    let manager = ConnectionManager::<PgConnection>::new(&config.connection_string());
+
+    let pool = Pool::builder()
+        .test_on_check_out(true)
+        .build(manager)
+        .expect("Failed to build database connection pool");
+
+    let mut conn = pool.get().unwrap();
+    run_db_migrations(&mut conn); 
+
+    pool
+}
+
+fn spawn_app() -> TestApp {
     let listener = TcpListener::bind("127.0.0.1:0")
         .expect("Failed to bind to random port");
-
     let port = listener.local_addr().unwrap().port();
+    let address = format!("http://127.0.0.1:{}", port);
 
-    let server = newsletter::run(listener).expect("Failed to bind address");
+    let mut config = get_configuration().expect("Failed to get configuration");
+    config.database.database_name = Uuid::new_v4().to_string();
+
+    let db_pool = configure_database(&config.database);
+
+    let server = newsletter::startup::run(listener, db_pool.clone()).expect("Failed to bind address");
     let _ = tokio::spawn(server);
 
-    format!("http://127.0.0.1:{}", port)
+    TestApp{ address, db_pool }
 }
