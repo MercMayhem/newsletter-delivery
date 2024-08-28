@@ -1,11 +1,20 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{error::BlockingError, web, HttpResponse};
 use chrono::Utc;
-use diesel::{r2d2::{ConnectionManager, Pool}, PgConnection, RunQueryDsl};
+use diesel::{r2d2::{ConnectionManager, Pool}, PgConnection, QueryResult, RunQueryDsl};
+use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::models::{Subscription, SubscriptionAdd};
 use crate::schema::subscriptions::dsl::*;
 
+#[tracing::instrument(
+    name = "Adding a new subscriber",
+    skip(form, pool),
+    fields(
+        subscriber_email = %form.email,
+        subscriber_name= %form.name
+    ) 
+)]
 pub async fn subscribe(form: web::Form<Subscription>, pool: web::Data<Pool<ConnectionManager<PgConnection>>>) -> HttpResponse {
     let insert = SubscriptionAdd{
         id: Uuid::new_v4(),
@@ -14,34 +23,37 @@ pub async fn subscribe(form: web::Form<Subscription>, pool: web::Data<Pool<Conne
         subscribed_at: Utc::now()
     };
 
-    let request_id = Uuid::new_v4();
-    log::info!(
-            "request_id {request_id} - Adding '{}' '{}' as a new subscriber.",
-            form.email,
-            form.name
-    );
-    
-    log::info!("request_id {request_id} - Saving new subscriber details in the database");
-    let mut conn = pool.get().unwrap();
-    let result = web::block(move || {
-        diesel::insert_into(subscriptions)
-        .values(insert)
-        .execute(&mut conn)
-    }).await;
-    
-    if let Ok(res) = result {
+    let result = insert_subscriber(&pool, insert);
+    if let Ok(res) = result.await {
         match res{
             Ok(_) => {
-                log::info!("request_id {request_id} - New subscriber has been saved successfully.");
+                tracing::info!("New subscriber has been saved successfully.");
                 HttpResponse::Ok().finish()
             },
             Err(e) => {
-                log::error!("request_id {request_id} - Failed to execute query: {:?}", e);
+                tracing::error!("Failed to execute query: {:?}", e);
                 HttpResponse::InternalServerError().finish()
             }
         }
     } else {
-        println!("Failed to execute query");
+        tracing::error!("Failed to execute query");
         HttpResponse::InternalServerError().finish()
     }
+}
+
+#[tracing::instrument(
+    name = "Saving new subscriber details in the database",
+    skip(insert, pool)
+)]
+pub async fn insert_subscriber(
+    pool: &Pool<ConnectionManager<PgConnection>>,
+    insert: SubscriptionAdd
+) -> Result<QueryResult<usize>, BlockingError> {
+    let mut conn = pool.get().unwrap();
+    web::block(move || {
+        diesel::insert_into(subscriptions)
+        .values(insert)
+        .execute(&mut conn)
+    })
+    .await
 }
