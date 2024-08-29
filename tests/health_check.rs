@@ -4,6 +4,7 @@ use diesel::{query_dsl::methods::SelectDsl, r2d2::{ConnectionManager, Pool}, Con
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use newsletter::{configuration::{get_configuration, DatabaseSettings}, models::Subscription, telemetry::{get_subscriber, init_subscriber}};
 use once_cell::sync::Lazy;
+use secrecy::ExposeSecret;
 use uuid::Uuid;
     
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -101,12 +102,12 @@ pub fn run_db_migrations(conn: &mut impl MigrationHarness<diesel::pg::Pg>) {
 }
 
 fn configure_database(config: &DatabaseSettings) -> Pool<ConnectionManager<PgConnection>>{
-    let mut connection = PgConnection::establish(&config.connection_string_without_db()).expect("Failed to connect to postgres database (without DB URI used)");
+    let mut connection = PgConnection::establish(&*config.connection_string_without_db().expose_secret()).expect("Failed to connect to postgres database (without DB URI used)");
     let query = format!(r#"CREATE DATABASE "{}";"#, config.database_name);
     diesel::sql_query(query).execute(&mut connection).expect("Failed to create test database");
 
     
-    let manager = ConnectionManager::<PgConnection>::new(&config.connection_string());
+    let manager = ConnectionManager::<PgConnection>::new(&*config.connection_string().expose_secret());
 
     let pool = Pool::builder()
         .test_on_check_out(true)

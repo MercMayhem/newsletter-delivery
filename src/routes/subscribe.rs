@@ -1,7 +1,8 @@
+use std::error::Error;
+
 use actix_web::{error::BlockingError, web, HttpResponse};
 use chrono::Utc;
 use diesel::{r2d2::{ConnectionManager, Pool}, PgConnection, QueryResult, RunQueryDsl};
-use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::models::{Subscription, SubscriptionAdd};
@@ -48,12 +49,12 @@ pub async fn subscribe(form: web::Form<Subscription>, pool: web::Data<Pool<Conne
 pub async fn insert_subscriber(
     pool: &Pool<ConnectionManager<PgConnection>>,
     insert: SubscriptionAdd
-) -> Result<QueryResult<usize>, BlockingError> {
-    let mut conn = pool.get().unwrap();
+) -> Result<QueryResult<usize>, Box<dyn Error>> {
+    let mut conn = pool.get()?;
     web::block(move || {
         diesel::insert_into(subscriptions)
         .values(insert)
         .execute(&mut conn)
     })
-    .await
+    .await.map_err(|_| "Failed insertion into DB".into())
 }

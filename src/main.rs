@@ -1,4 +1,5 @@
 use std::net::TcpListener;
+use std::time::Duration;
 
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::PgConnection;
@@ -13,14 +14,15 @@ async fn main() -> std::io::Result<()> {
     init_subscriber(subscriber);
 
     let config = get_configuration().expect("Failed to get configuration");
-    let address = format!("127.0.0.1:{}", config.application_port);
+    let address = format!("{}:{}", config.application.host, config.application.port);
     let listener = TcpListener::bind(&address)?;
+    println!("Host: {}", config.application.host);
 
     let manager = ConnectionManager::<PgConnection>::new(&*config.database.connection_string().expose_secret());
     let connection_pool = Pool::builder()
                             .test_on_check_out(true)
-                            .build(manager)
-                            .expect("Failed to build database connection pool");
+                            .connection_timeout(Duration::from_secs(5))
+                            .build_unchecked(manager);
 
     run(listener, connection_pool)?.await
 }
