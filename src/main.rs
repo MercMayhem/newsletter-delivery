@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::PgConnection;
+use newsletter::email_client::EmailClient;
 use newsletter::startup::run;
 use newsletter::configuration::get_configuration;
 use newsletter::telemetry::{get_subscriber, init_subscriber};
@@ -24,5 +25,8 @@ async fn main() -> std::io::Result<()> {
                             .connection_timeout(Duration::from_secs(5))
                             .build_unchecked(manager);
 
-    run(listener, connection_pool)?.await
+    let sender_email = config.email_client.sender().expect("Failed to get valid sender email");
+    let email_client = EmailClient::new(config.email_client.base_url, sender_email);
+
+    run(listener, connection_pool, email_client)?.await
 }
