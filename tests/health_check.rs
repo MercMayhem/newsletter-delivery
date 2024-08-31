@@ -2,6 +2,7 @@ use std::net::TcpListener;
 
 use diesel::{query_dsl::methods::SelectDsl, r2d2::{ConnectionManager, Pool}, Connection, PgConnection, RunQueryDsl};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use fake::{Fake, Faker};
 use newsletter::{configuration::{get_configuration, DatabaseSettings}, email_client::EmailClient, models::Subscription, telemetry::{get_subscriber, init_subscriber}};
 use once_cell::sync::Lazy;
 use secrecy::ExposeSecret;
@@ -161,7 +162,7 @@ fn spawn_app() -> TestApp {
     let db_pool = configure_database(&config.database);
 
     let sender_email = config.email_client.sender().expect("Failed to get valid sender email");
-    let email_client = EmailClient::new(config.email_client.base_url, sender_email);
+    let email_client = EmailClient::new(config.email_client.base_url, sender_email, secrecy::Secret::new(Faker.fake()), config.email_client.timeout);
 
     let server = newsletter::startup::run(listener, db_pool.clone(), email_client).expect("Failed to bind address");
     let _ = tokio::spawn(server);

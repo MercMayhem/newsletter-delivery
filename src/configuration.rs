@@ -16,7 +16,9 @@ pub struct Settings {
 #[derive(Deserialize)]
 pub struct EmailClientSettings{
     pub base_url: String,
-    pub sender_email: String
+    pub sender_email: String,
+    pub authorization_token: Secret<String>,
+    pub timeout: u64
 }
 
 impl EmailClientSettings {

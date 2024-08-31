@@ -1400,6 +1400,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde-aux",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-actix-web",
