@@ -1,3 +1,9 @@
+use argon2::password_hash::SaltString;
+use argon2::Algorithm;
+use argon2::Params;
+use argon2::PasswordHasher;
+use argon2::Argon2;
+use argon2::Version;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::{Connection, PgConnection, RunQueryDsl};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
@@ -24,6 +30,46 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     };
 });
 
+pub struct TestUser {
+    pub user_id: Uuid,
+    pub username: String,
+    pub password: String,
+}
+
+impl TestUser {
+    pub fn generate() -> Self {
+        Self {
+            user_id: Uuid::new_v4(),
+            username: Uuid::new_v4().to_string(),
+            password: Uuid::new_v4().to_string()
+        }
+    }
+
+    pub fn store(&self, pool: &Pool<ConnectionManager<PgConnection>>) {
+        let salt = SaltString::generate(&mut rand::thread_rng());
+
+        let password_hash = Argon2::new(
+                Algorithm::Argon2id,
+                Version::V0x13,
+                Params::new(15000, 2, 1, None).unwrap()
+            )
+            .hash_password(self.password.as_bytes(), &salt)
+            .unwrap()
+            .to_string();
+
+        let mut conn = pool.get().expect("Failed to get db connection from pool");
+
+        diesel::sql_query(
+            "INSERT INTO users (user_id, username, password) VALUES ($1, $2, $3)"
+        )
+            .bind::<diesel::sql_types::Uuid, _>(self.user_id)
+            .bind::<diesel::sql_types::Text, _>(&self.username)
+            .bind::<diesel::sql_types::Text, _>(password_hash)
+            .execute(&mut conn)
+            .expect("Failed to create test users.");
+    }
+}
+
 pub struct ConfirmationLinks {
     pub html: reqwest::Url,
     pub plain_text: reqwest::Url,
@@ -34,6 +80,7 @@ pub struct TestApp {
     pub db_pool: Pool<ConnectionManager<PgConnection>>,
     pub email_server: MockServer,
     pub port: u16,
+    pub test_user: TestUser
 }
 
 impl TestApp {
@@ -58,10 +105,12 @@ impl TestApp {
         let plain_text = get_link(&body["TextBody"].as_str().unwrap());
         ConfirmationLinks { html, plain_text }
     }
+
     pub async fn post_subscriptions(&self, body: String) -> reqwest::Response {
         reqwest::Client::new()
             .post(&format!("{}/subscriptions", &self.address))
             .header("Content-Type", "application/x-www-form-urlencoded")
+            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
             .body(body)
             .send()
             .await
@@ -121,10 +170,14 @@ pub async fn spawn_app() -> TestApp {
     let port = application.port();
     let _ = tokio::spawn(application.run_until_stopped());
 
-    TestApp {
+    let test_app = TestApp {
         address,
         db_pool: get_connection_pool(&configuration.database),
         email_server,
         port,
-    }
+        test_user: TestUser::generate()
+    };
+
+    test_app.test_user.store(&test_app.db_pool);
+    test_app
 }

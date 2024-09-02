@@ -9,6 +9,8 @@ path = "src/lib.rs"
 [dependencies]
 actix-web = "4.9.0"
 anyhow = "1.0.87"
+argon2 = { version = "0.5.3", features = ["password-hash", "std"] }
+base64 = "0.22.1"
 chrono = "0.4.38"
 claim = "0.5.0"
 config = "0.14.0"

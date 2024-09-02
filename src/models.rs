@@ -1,5 +1,6 @@
 use crate::schema::subscription_tokens;
 use crate::schema::subscriptions;
+use crate::schema::users;
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::Deserialize;
@@ -39,4 +40,10 @@ pub struct SubscriptionToken {
 pub struct SubscribeFormData {
     pub email: String,
     pub name: String,
+}
+
+#[derive(Queryable)]
+pub struct VerificationInfo{
+    pub user_id: Uuid,
+    pub password: String
 }
