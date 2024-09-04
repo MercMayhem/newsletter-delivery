@@ -7,6 +7,7 @@ use once_cell::sync::Lazy;
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 use newsletter::configuration::{get_configuration, DatabaseSettings};
+use wiremock::MockServer;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
@@ -26,6 +27,7 @@ static TRACING: Lazy<()> = Lazy::new(|| {
 pub struct TestApp {
     pub address: String,
     pub db_pool: Pool<ConnectionManager<PgConnection>>,
+    pub email_server: MockServer
 }
 
 impl TestApp {
@@ -68,10 +70,13 @@ fn configure_database(config: &DatabaseSettings) -> Pool<ConnectionManager<PgCon
 pub async fn spawn_app() -> TestApp {
     Lazy::force(&TRACING);
 
+    let email_server = MockServer::start().await;
+
     let configuration = {
         let mut c = get_configuration().expect("Failed to read configuration.");
         c.database.database_name = Uuid::new_v4().to_string();
         c.application.port = 0;
+        c.email_client.base_url = email_server.uri();
         c
     };
 
@@ -84,5 +89,5 @@ pub async fn spawn_app() -> TestApp {
     let address = format!("http://127.0.0.1:{}", application.port());
     let _ = tokio::spawn(application.run_until_stopped());
 
-    TestApp{ address, db_pool: get_connection_pool(&configuration.database)}
+    TestApp{ address, db_pool: get_connection_pool(&configuration.database), email_server}
 }

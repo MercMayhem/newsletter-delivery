@@ -55,7 +55,7 @@ pub fn get_connection_pool(config: &DatabaseSettings) -> Pool<ConnectionManager<
         .build_unchecked(manager)
 }
 
-pub fn run(listener: TcpListener, connection_pool: Pool<ConnectionManager<PgConnection>>, email_client: EmailClient) -> Result<Server, std::io::Error>{
+fn run(listener: TcpListener, connection_pool: Pool<ConnectionManager<PgConnection>>, email_client: EmailClient) -> Result<Server, std::io::Error>{
 
     let connection_pool = web::Data::new(connection_pool);
     let email_client = web::Data::new(email_client);
