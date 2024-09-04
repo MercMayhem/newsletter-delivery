@@ -1,8 +1,8 @@
 use config::{Config, ConfigError};
-use serde_aux::field_attributes::deserialize_number_from_string;
-use serde::Deserialize;
-use secrecy::Secret;
 use secrecy::ExposeSecret;
+use secrecy::Secret;
+use serde::Deserialize;
+use serde_aux::field_attributes::deserialize_number_from_string;
 
 use crate::domain::subscriber_email::SubscriberEmail;
 
@@ -10,19 +10,19 @@ use crate::domain::subscriber_email::SubscriberEmail;
 pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
-    pub email_client: EmailClientSettings
+    pub email_client: EmailClientSettings,
 }
 
 #[derive(Deserialize, Clone)]
-pub struct EmailClientSettings{
+pub struct EmailClientSettings {
     pub base_url: String,
     pub sender_email: String,
     pub authorization_token: Secret<String>,
-    pub timeout: u64
+    pub timeout: u64,
 }
 
 impl EmailClientSettings {
-    pub fn sender(&self) -> Result<SubscriberEmail, String>{
+    pub fn sender(&self) -> Result<SubscriberEmail, String> {
         SubscriberEmail::parse(self.sender_email.clone())
     }
 }
@@ -37,7 +37,7 @@ pub struct DatabaseSettings {
 
     pub host: String,
     pub database_name: String,
-    pub require_ssl: bool
+    pub require_ssl: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -45,7 +45,7 @@ pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
-    pub base_url: String
+    pub base_url: String,
 }
 
 pub enum Environment {
@@ -56,8 +56,9 @@ pub enum Environment {
 impl Environment {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Environment::Local => "local", Environment::Production => "production",
-        } 
+            Environment::Local => "local",
+            Environment::Production => "production",
+        }
     }
 }
 
@@ -65,14 +66,17 @@ impl TryFrom<String> for Environment {
     type Error = String;
     fn try_from(s: String) -> Result<Self, Self::Error> {
         match s.to_lowercase().as_str() {
-            "local" => Ok(Self::Local), 
-            "production" => Ok(Self::Production), 
-            other => Err(format!("{} is not a supported environment. Use either `local` or `production`.", other))
-        } 
+            "local" => Ok(Self::Local),
+            "production" => Ok(Self::Production),
+            other => Err(format!(
+                "{} is not a supported environment. Use either `local` or `production`.",
+                other
+            )),
+        }
     }
 }
 
-pub fn get_configuration() -> Result<Settings, ConfigError>{
+pub fn get_configuration() -> Result<Settings, ConfigError> {
     let base_path = std::env::current_dir().expect("Failed to get current working directory");
     let configuration_path = base_path.join("configuration");
 
@@ -84,7 +88,9 @@ pub fn get_configuration() -> Result<Settings, ConfigError>{
 
     let config = Config::builder()
         .add_source(config::File::from(base_config_path))
-        .add_source(config::File::from(configuration_path.join(curr_env.as_str())))
+        .add_source(config::File::from(
+            configuration_path.join(curr_env.as_str()),
+        ))
         .add_source(config::Environment::with_prefix("app").separator("__"))
         .build()?;
 
@@ -92,24 +98,26 @@ pub fn get_configuration() -> Result<Settings, ConfigError>{
     Ok(settings)
 }
 
-impl DatabaseSettings{
-    pub fn connection_string(&self) -> Secret<String>{
+impl DatabaseSettings {
+    pub fn connection_string(&self) -> Secret<String> {
         let db = self.connection_string_without_db();
         let mut db_mut = db.expose_secret().clone();
 
         db_mut.push_str(&format!("/{}", self.database_name));
-        if self.require_ssl{
+        if self.require_ssl {
             db_mut.push_str("?sslmode=require".as_ref())
         }
 
         Secret::new(db_mut)
     }
-    
-    pub fn connection_string_without_db(&self) -> Secret<String> { 
+
+    pub fn connection_string_without_db(&self) -> Secret<String> {
         Secret::new(format!(
             "postgres://{}:{}@{}:{}",
-            self.username, self.password.expose_secret(), self.host, self.port
-            )
-        )
+            self.username,
+            self.password.expose_secret(),
+            self.host,
+            self.port
+        ))
     }
 }

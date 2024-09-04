@@ -1,5 +1,5 @@
-use newsletter::startup::Application;
 use newsletter::configuration::get_configuration;
+use newsletter::startup::Application;
 use newsletter::telemetry::{get_subscriber, init_subscriber};
 
 #[actix_web::main]

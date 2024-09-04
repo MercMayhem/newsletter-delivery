@@ -1,12 +1,12 @@
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::{Connection, PgConnection, RunQueryDsl};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use newsletter::configuration::{get_configuration, DatabaseSettings};
 use newsletter::startup::{get_connection_pool, Application};
 use newsletter::telemetry::{get_subscriber, init_subscriber};
 use once_cell::sync::Lazy;
 use secrecy::ExposeSecret;
 use uuid::Uuid;
-use newsletter::configuration::{get_configuration, DatabaseSettings};
 use wiremock::{MockServer, Request};
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
@@ -24,41 +24,39 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     };
 });
 
-pub struct ConfirmationLinks{
+pub struct ConfirmationLinks {
     pub html: reqwest::Url,
-    pub plain_text: reqwest::Url
+    pub plain_text: reqwest::Url,
 }
 
 pub struct TestApp {
     pub address: String,
     pub db_pool: Pool<ConnectionManager<PgConnection>>,
     pub email_server: MockServer,
-    pub port: u16
+    pub port: u16,
 }
 
 impl TestApp {
-    pub fn get_confirmation_links(&self, email_request: &Request) -> ConfirmationLinks{
+    pub fn get_confirmation_links(&self, email_request: &Request) -> ConfirmationLinks {
         let body: serde_json::Value = serde_json::from_slice(&email_request.body).unwrap();
         let get_link = |s: &str| {
-                let links: Vec<_> = linkify::LinkFinder::new()
+            let links: Vec<_> = linkify::LinkFinder::new()
                 .links(s)
-                .filter(|l| *l.kind() == linkify::LinkKind::Url) .collect();
-                assert_eq!(links.len(), 1);
-                let raw_link = links[0].as_str().to_owned();
-                let mut confirmation_link = reqwest::Url::parse(&raw_link).unwrap();
+                .filter(|l| *l.kind() == linkify::LinkKind::Url)
+                .collect();
+            assert_eq!(links.len(), 1);
+            let raw_link = links[0].as_str().to_owned();
+            let mut confirmation_link = reqwest::Url::parse(&raw_link).unwrap();
 
-                assert_eq!(confirmation_link.host_str().unwrap(), "127.0.0.1");
-                confirmation_link.set_port(Some(self.port)).unwrap();
+            assert_eq!(confirmation_link.host_str().unwrap(), "127.0.0.1");
+            confirmation_link.set_port(Some(self.port)).unwrap();
 
-                confirmation_link
+            confirmation_link
         };
 
         let html = get_link(&body["HtmlBody"].as_str().unwrap());
         let plain_text = get_link(&body["TextBody"].as_str().unwrap());
-        ConfirmationLinks {
-            html,
-            plain_text
-        }
+        ConfirmationLinks { html, plain_text }
     }
     pub async fn post_subscriptions(&self, body: String) -> reqwest::Response {
         reqwest::Client::new()
@@ -72,18 +70,22 @@ impl TestApp {
 }
 
 pub fn run_db_migrations(conn: &mut impl MigrationHarness<diesel::pg::Pg>) {
-    conn.run_pending_migrations(MIGRATIONS).expect("Could not run migrations");
+    conn.run_pending_migrations(MIGRATIONS)
+        .expect("Could not run migrations");
 }
 
-fn configure_database(config: &DatabaseSettings) -> Pool<ConnectionManager<PgConnection>>{
-    let mut connection = PgConnection::establish(&*config.connection_string_without_db().expose_secret())
-        .expect("Failed to connect to postgres database (without DB URI used)");
+fn configure_database(config: &DatabaseSettings) -> Pool<ConnectionManager<PgConnection>> {
+    let mut connection =
+        PgConnection::establish(&*config.connection_string_without_db().expose_secret())
+            .expect("Failed to connect to postgres database (without DB URI used)");
 
     let query = format!(r#"CREATE DATABASE "{}";"#, config.database_name);
-    diesel::sql_query(query).execute(&mut connection).expect("Failed to create test database");
+    diesel::sql_query(query)
+        .execute(&mut connection)
+        .expect("Failed to create test database");
 
-    
-    let manager = ConnectionManager::<PgConnection>::new(&*config.connection_string().expose_secret());
+    let manager =
+        ConnectionManager::<PgConnection>::new(&*config.connection_string().expose_secret());
 
     let pool = Pool::builder()
         .test_on_check_out(true)
@@ -91,7 +93,7 @@ fn configure_database(config: &DatabaseSettings) -> Pool<ConnectionManager<PgCon
         .expect("Failed to build database connection pool");
 
     let mut conn = pool.get().unwrap();
-    run_db_migrations(&mut conn); 
+    run_db_migrations(&mut conn);
 
     pool
 }
@@ -112,12 +114,17 @@ pub async fn spawn_app() -> TestApp {
     configure_database(&configuration.database);
 
     let application = Application::build(configuration.clone())
-                        .await
-                        .expect("Failed to build application.");
+        .await
+        .expect("Failed to build application.");
 
     let address = format!("http://localhost:{}", application.port());
     let port = application.port();
     let _ = tokio::spawn(application.run_until_stopped());
 
-    TestApp{ address, db_pool: get_connection_pool(&configuration.database), email_server, port }
+    TestApp {
+        address,
+        db_pool: get_connection_pool(&configuration.database),
+        email_server,
+        port,
+    }
 }
