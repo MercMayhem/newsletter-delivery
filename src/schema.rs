@@ -19,4 +19,7 @@ diesel::table! {
 
 diesel::joinable!(subscription_tokens -> subscriptions (subscriber_id));
 
-diesel::allow_tables_to_appear_in_same_query!(subscription_tokens, subscriptions,);
+diesel::allow_tables_to_appear_in_same_query!(
+    subscription_tokens,
+    subscriptions,
+);

@@ -1,11 +1,8 @@
-use std::error::Error;
 
-use actix_web::{web, HttpResponse};
+use actix_web::{error::BlockingError, http::StatusCode, web, HttpResponse, ResponseError};
 use chrono::Utc;
 use diesel::{
-    associations::HasTable,
-    r2d2::{ConnectionManager, Pool},
-    Connection, PgConnection, RunQueryDsl,
+    associations::HasTable, r2d2::{ConnectionManager, Pool}, Connection, PgConnection, RunQueryDsl
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use uuid::Uuid;
@@ -35,6 +32,31 @@ impl TryFrom<SubscribeFormData> for NewSubscriber {
     }
 }
 
+#[derive(thiserror::Error)]
+pub enum SubscribeError{
+    #[error("{0}")]
+    ValidationError(String),
+    #[error("Failed to insert subscriber to database")]
+    InsertSubscriberError(#[from] InsertSubscriberError),
+    #[error("Failed to send confirmation email to user")]
+    SendEmailError(#[from] reqwest::Error)
+}
+
+impl std::fmt::Debug for SubscribeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl ResponseError for SubscribeError{
+    fn status_code(&self) -> actix_web::http::StatusCode {
+        match self {
+            Self::ValidationError(_) => StatusCode::BAD_REQUEST,
+            Self::InsertSubscriberError(_) | Self::SendEmailError(_) => StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
 #[tracing::instrument(
     name = "Adding a new subscriber",
     skip(form, pool, email_client, base_url),
@@ -48,36 +70,44 @@ pub async fn subscribe(
     pool: web::Data<Pool<ConnectionManager<PgConnection>>>,
     email_client: web::Data<EmailClient>,
     base_url: web::Data<ApplicationBaseUrl>,
-) -> HttpResponse {
-    let new_subscriber: NewSubscriber = match form.0.try_into() {
-        Ok(form) => form,
-        Err(e) => return HttpResponse::BadRequest().body(e),
-    };
+) -> Result<HttpResponse, SubscribeError>{
+    let new_subscriber: NewSubscriber = form.0.try_into().map_err(SubscribeError::ValidationError)?;
+    let subscriber_token = insert_subscriber(&pool, &new_subscriber).await?;
+    tracing::info!("New subscriber has been saved successfully.");
+    send_confirmation_mail(
+        &email_client,
+        new_subscriber,
+        &base_url.0,
+        &subscriber_token,
+    )
+    .await?;
+    tracing::info!("Successfully sent confirmation mail");
+    Ok(HttpResponse::Ok().finish())
+}
 
-    let insert_op = insert_subscriber(&pool, &new_subscriber).await;
-    match insert_op {
-        Ok(subscriber_token) => {
-            tracing::info!("New subscriber has been saved successfully.");
+#[derive(thiserror::Error)]
+#[error("Error Inserting Subscriber to DB")]
+pub enum InsertSubscriberError{
+    DbPoolErr(#[from] r2d2::Error),
+    TransactionError(#[from] diesel::result::Error),
+    ThreadPoolErr(#[from] BlockingError)
+}
 
-            if send_confirmation_mail(
-                &email_client,
-                new_subscriber,
-                &base_url.0,
-                &subscriber_token,
-            )
-            .await
-            .is_err()
-            {
-                return HttpResponse::InternalServerError().finish();
-            }
+fn error_chain_fmt(e: &impl std::error::Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}\n", e)?;
+    let mut current = e.source();
 
-            HttpResponse::Ok().finish()
-        }
+    while let Some(cause) = current {
+        write!(f, "\nCaused By:\n\t{}", cause)?;
+        current = cause.source();
+    }
 
-        Err(_) => {
-            tracing::error!("Failed to execute query");
-            HttpResponse::InternalServerError().finish()
-        }
+    Ok(())
+}
+
+impl std::fmt::Debug for InsertSubscriberError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
     }
 }
 
@@ -88,7 +118,7 @@ pub async fn subscribe(
 pub async fn insert_subscriber(
     pool: &Pool<ConnectionManager<PgConnection>>,
     insert: &NewSubscriber,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<String, InsertSubscriberError> {
     let sub_id = Uuid::new_v4();
     let sub_token = generate_subscription_token();
 
@@ -105,9 +135,11 @@ pub async fn insert_subscriber(
         subscription_token: sub_token.clone(),
     };
 
-    let mut conn = pool.get()?;
+    let mut conn = pool.get().map_err(|err| {
+        InsertSubscriberError::DbPoolErr(err)
+    })?;
 
-    let result = web::block(move || {
+    let thread_result = web::block(move || {
         conn.transaction(|conn| {
             diesel::insert_into(subscriptions::table())
                 .values(insert_subscriptions)
@@ -122,15 +154,19 @@ pub async fn insert_subscriber(
     })
     .await;
 
-    if result.is_err() {
-        return Err("Failed due to blocking error".into());
+    match thread_result {
+        Ok(r) => {
+            if let Err(e) = r {
+                return Err(InsertSubscriberError::TransactionError(e));
+            }
+            return Ok(sub_token);
+        },
+
+        Err(e) => {
+            return Err(InsertSubscriberError::ThreadPoolErr(e));
+        }
     }
 
-    result
-        .unwrap()
-        .map_err(|_| "Failed insertion into DB".to_string())?;
-
-    Ok(sub_token)
 }
 
 #[tracing::instrument(
@@ -155,7 +191,6 @@ pub async fn send_confirmation_mail(
     ).await;
 
     if res.is_err() {
-        tracing::error!("Couldn't send email");
         return res;
     }
 
