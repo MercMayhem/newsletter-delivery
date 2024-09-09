@@ -93,7 +93,7 @@ pub enum InsertSubscriberError{
     ThreadPoolErr(#[from] BlockingError)
 }
 
-fn error_chain_fmt(e: &impl std::error::Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+pub fn error_chain_fmt(e: &impl std::error::Error, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}\n", e)?;
     let mut current = e.source();
 
@@ -184,7 +184,7 @@ pub async fn send_confirmation_mail(
         base_url, sub_token
     );
 
-    let res = email_client.send_email(new_subscriber.email,
+    let res = email_client.send_email(&new_subscriber.email,
         "Welcome!",
         &format!("Welcome to our newsletter! Click <a href = \"{}\">here</a> to confirm your subscription", confirmation_link),
         &format!("Welcome to our newsletter! Visit {} to confirm subscription", confirmation_link)

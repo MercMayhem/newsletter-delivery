@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
 use crate::routes::health_check::health_check;
+use crate::routes::newsletter_delivery::newsletter_delivery;
 use crate::routes::subscribe::subscribe;
 use crate::routes::subscriptions_confirm::confirm;
 use actix_web::{dev::Server, web, App, HttpServer};
@@ -81,6 +82,7 @@ fn run(
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
             .route("/subscriptions/confirm", web::get().to(confirm))
+            .route("/newsletters", web::post().to(newsletter_delivery))
             .app_data(connection_pool.clone())
             .app_data(email_client.clone())
             .app_data(base_url.clone())

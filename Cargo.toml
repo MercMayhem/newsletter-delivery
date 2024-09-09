@@ -8,6 +8,7 @@ path = "src/lib.rs"
 
 [dependencies]
 actix-web = "4.9.0"
+anyhow = "1.0.87"
 chrono = "0.4.38"
 claim = "0.5.0"
 config = "0.14.0"
