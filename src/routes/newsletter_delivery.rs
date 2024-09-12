@@ -1,14 +1,12 @@
 use actix_web::{http::{header::{HeaderMap, HeaderValue}, StatusCode}, web, HttpRequest, HttpResponse, ResponseError};
 use anyhow::Context;
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
-use secrecy::{ExposeSecret, Secret};
+use secrecy::Secret;
 use serde::Deserialize;
 use diesel::{r2d2::{ConnectionManager, Pool}, PgConnection};
 use diesel::prelude::*;
 use base64::prelude::*;
-use uuid::Uuid;
 
-use crate::{email_client::EmailClient, models::{Subscription, VerificationInfo}};
+use crate::{authentication::{validate_credentials, AuthError, Credentials}, email_client::EmailClient, models::Subscription};
 use crate::domain::subscriber_email::SubscriberEmail;
 
 use super::subscribe::error_chain_fmt;
@@ -77,7 +75,12 @@ pub async fn newsletter_delivery(body: web::Json<BodyData>, pool: web::Data<Pool
         &tracing::field::display(&credentials.username)
     );
 
-    let user_id = validate_credentials(credentials, &pool).await?;
+    let user_id = validate_credentials(credentials, &pool)
+                    .await
+                    .map_err(|e| match e{
+                        AuthError::InvalidCredentials(_) => PublishError::AuthError(e.into()),
+                        AuthError::UnexpectedError(_) => PublishError::UnexpectedError(e.into())
+                    })?;
     tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
 
     let subscriptions = get_confirmed_subscribers(&pool).await?;
@@ -142,10 +145,6 @@ async fn get_confirmed_subscribers(pool: &Pool<ConnectionManager<PgConnection>>)
     )
 }
 
-struct Credentials {
-    username: String,
-    password: Secret<String>,
-}
 
 fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
     let header_value = headers
@@ -174,95 +173,11 @@ fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Erro
         .ok_or_else(|| anyhow::anyhow!("A password must be provided in 'Basic' auth."))? 
         .to_string();
 
-    Ok(Credentials { 
+    Ok(Credentials{ 
         username,
         password: Secret::new(password) 
     })
 }
 
-#[tracing::instrument(
-name = "Verify password hash", skip(expected_password_hash, password_candidate)
-)]
-fn verify_password_hash(
-    expected_password_hash: Secret<String>,
-    password_candidate: Secret<String>,
-) -> Result<(), PublishError> {
-        let expected_password_hash = PasswordHash::new(
-            expected_password_hash.expose_secret()
-            )
-            .context("Failed to parse hash in PHC string format.")
-            .map_err(PublishError::UnexpectedError)?;
 
-        Argon2::default()
-            .verify_password(
-                password_candidate.expose_secret().as_bytes(),
-                &expected_password_hash
-            )
-            .context("Invalid password.") 
-            .map_err(PublishError::AuthError)
-}
 
-#[tracing::instrument(name = "Get stored credentials", skip(uname, pool))]
-async fn get_stored_credentials(uname: &str, pool: &Pool<ConnectionManager<PgConnection>>) -> Result<Option<(Secret<String>, Uuid)>, anyhow::Error> {
-    use crate::schema::users::dsl::*;
-
-    let mut conn = pool.get().context("Failed to get connection from pool")?;
-    let uname = uname.to_string();
-    
-    let result = web::block(move || {
-
-        let row: Result<VerificationInfo, anyhow::Error> = users.select((user_id, password))
-            .limit(1)
-            .filter(username.eq(uname))
-            .first::<VerificationInfo>(&mut conn)
-            .context("Failed to query user");
-
-        row
-    })
-    .await
-    .context("Failed due threadpool error")
-    .map_err(PublishError::UnexpectedError)?
-    .map_err(PublishError::UnexpectedError)?;
-
-    Ok(Some((Secret::new(result.password), result.user_id)))
-}
-
-#[tracing::instrument(name = "Validate credentials", skip(credentials, pool))]
-async fn validate_credentials(
-    credentials: Credentials,
-    pool: &Pool<ConnectionManager<PgConnection>>,
-) -> Result<uuid::Uuid, PublishError>{
-    let mut user_id: Option<Uuid> = None;
-    let mut expected_password_hash = Secret::new(
-        "$argon2id$v=19$m=15000,t=2,p=1$\
-        gZiV/M1gPc22ElAH/Jh1Hw$\
-        CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno"
-            .to_string()
-    );
-
-    if let Some((stored_password_hash, stored_user_id))
-        = get_stored_credentials(&credentials.username, &pool)
-            .await
-            .map_err(PublishError::UnexpectedError)?
-    {
-        user_id = Some(stored_user_id);
-        expected_password_hash = stored_password_hash;
-    }
-
-    let current_span = tracing::Span::current();
-    tokio::task::spawn_blocking(move || {
-        current_span.in_scope(|| {
-            verify_password_hash(
-                expected_password_hash,
-                credentials.password
-            )
-        })
-    })
-    .await
-    .context("Failed to spawn blocking task.")
-    .map_err(PublishError::UnexpectedError)??;
-
-    user_id.ok_or_else(
-        || PublishError::AuthError(anyhow::anyhow!("Unknown username."))
-    )
-}

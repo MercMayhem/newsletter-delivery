@@ -4,13 +4,17 @@ use std::time::Duration;
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
 use crate::routes::health_check::health_check;
+use crate::routes::{home, login, login_form};
 use crate::routes::newsletter_delivery::newsletter_delivery;
 use crate::routes::subscribe::subscribe;
 use crate::routes::subscriptions_confirm::confirm;
+use actix_web::cookie::Key;
 use actix_web::{dev::Server, web, App, HttpServer};
+use actix_web_flash_messages::storage::CookieMessageStore;
+use actix_web_flash_messages::{FlashMessagesFramework, Level};
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::PgConnection;
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, Secret};
 use tracing_actix_web::TracingLogger;
 
 pub struct Application {
@@ -44,6 +48,7 @@ impl Application {
             connection_pool,
             email_client,
             config.application.base_url,
+            config.application.hmac_secret
         )?;
         Ok(Self { port, server })
     }
@@ -71,18 +76,30 @@ fn run(
     connection_pool: Pool<ConnectionManager<PgConnection>>,
     email_client: EmailClient,
     base_url: String,
+    hmac_secret: Secret<String>
 ) -> Result<Server, std::io::Error> {
     let connection_pool = web::Data::new(connection_pool);
     let email_client = web::Data::new(email_client);
     let base_url = web::Data::new(ApplicationBaseUrl(base_url));
 
+    let message_store = CookieMessageStore::builder(
+        Key::from(hmac_secret.expose_secret().as_bytes())
+    ).build();
+    let message_framework = FlashMessagesFramework::builder(message_store)
+                                .minimum_level(Level::Debug)
+                                .build();
+
     let server = HttpServer::new(move || {
         App::new()
+            .wrap(message_framework.clone())
             .wrap(TracingLogger::default())
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
             .route("/subscriptions/confirm", web::get().to(confirm))
             .route("/newsletters", web::post().to(newsletter_delivery))
+            .route("/", web::get().to(home))
+            .route("/login", web::get().to(login_form))
+            .route("/login", web::post().to(login))
             .app_data(connection_pool.clone())
             .app_data(email_client.clone())
             .app_data(base_url.clone())

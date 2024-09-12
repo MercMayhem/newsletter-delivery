@@ -8,6 +8,7 @@ path = "src/lib.rs"
 
 [dependencies]
 actix-web = "4.9.0"
+actix-web-flash-messages = { version = "0.5.0", features = ["cookies"] }
 anyhow = "1.0.87"
 argon2 = { version = "0.5.3", features = ["password-hash", "std"] }
 base64 = "0.22.1"
@@ -24,7 +25,7 @@ quickcheck_macros = "1.0.0"
 r2d2 = "0.8.10"
 rand = { version = "0.8.5", features = ["std_rng"] }
 rand_core = "0.6.4"
-reqwest = { version = "0.12.7", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12.7", features = ["cookies", "json", "rustls-tls"] }
 secrecy = { version = "0.8.0", features = ["serde"] }
 serde = { version = "1.0.209", features = ["derive"] }
 serde-aux = "4.5.0"

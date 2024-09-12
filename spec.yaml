@@ -39,6 +39,9 @@ services:
       - key: APP_APPLICATION__BASE_URL
         scope: RUN_TIME
         value: ${APP_URL}
+      - key: APP_APPLICATION__HMAC_SECRET
+        scope: RUN_TIME
+        value: "psssst-secret-alalal-lllaaj-1234-aaahjajla-113r1nnha-adgagagljhakgagajkhagalh"
 
 databases:
   - engine: PG

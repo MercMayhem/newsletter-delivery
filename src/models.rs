@@ -42,7 +42,7 @@ pub struct SubscribeFormData {
     pub name: String,
 }
 
-#[derive(Queryable)]
+#[derive(Queryable, Debug)]
 pub struct VerificationInfo{
     pub user_id: Uuid,
     pub password: String
