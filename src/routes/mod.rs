@@ -6,3 +6,5 @@ pub mod home;
 pub use home::*;
 mod login;
 pub use login::*;
+pub mod admin;
+pub use admin::*;

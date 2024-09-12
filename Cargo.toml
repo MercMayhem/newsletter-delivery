@@ -7,6 +7,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
+actix-session = { version = "0.10.0", features = ["redis-session-rustls"] }
 actix-web = "4.9.0"
 actix-web-flash-messages = { version = "0.5.0", features = ["cookies"] }
 anyhow = "1.0.87"
@@ -37,6 +38,6 @@ tracing-actix-web = "0.7.11"
 tracing-bunyan-formatter = "0.3.9"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "registry"] }
 unicode-segmentation = "1.11.0"
-uuid = { version = "1.10.0", features = ["v4"] }
+uuid = { version = "1.10.0", features = ["serde", "v4"] }
 validator = "0.18.1"
 wiremock = "0.6.1"

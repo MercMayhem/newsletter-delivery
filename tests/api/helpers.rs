@@ -11,7 +11,7 @@ use newsletter::configuration::{get_configuration, DatabaseSettings};
 use newsletter::startup::{get_connection_pool, Application};
 use newsletter::telemetry::{get_subscriber, init_subscriber};
 use once_cell::sync::Lazy;
-use reqwest::redirect::Policy;
+use reqwest::Response;
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 use wiremock::{MockServer, Request};
@@ -42,7 +42,7 @@ impl TestUser {
         Self {
             user_id: Uuid::new_v4(),
             username: Uuid::new_v4().to_string(),
-            password: Uuid::new_v4().to_string()
+            password: "testpassword".into()
         }
     }
 
@@ -137,6 +137,22 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+            .text()
+            .await
+            .unwrap()
+    }
+
+    pub async fn get_admin_dashboard(&self) -> Response{
+        self.api_client
+            .get(&format!("{}/admin/dashboard", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn get_admin_dashboard_html(&self) -> String {
+        self.get_admin_dashboard()
+            .await
             .text()
             .await
             .unwrap()
