@@ -1,12 +1,13 @@
 use actix_web::web;
+use argon2::PasswordHasher;
 use anyhow::Context;
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use argon2::{password_hash::SaltString, Algorithm, Argon2, Params, PasswordHash, PasswordVerifier, Version};
 use diesel::{r2d2::ConnectionManager, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
 use r2d2::Pool;
 use secrecy::{ExposeSecret, Secret};
 use uuid::Uuid;
 
-use crate::{models::VerificationInfo, routes::newsletter_delivery::PublishError};
+use crate::models::VerificationInfo;
 
 
 
@@ -64,7 +65,48 @@ pub async fn validate_credentials(
 }
 
 #[tracing::instrument(
-name = "Verify password hash", skip(expected_password_hash, password_candidate)
+    name = "Set new password",
+    skip(uid, password, pool)
+)]
+pub async fn change_password(
+    uid: Uuid,
+    password: Secret<String>,
+    pool: &Pool<ConnectionManager<PgConnection>>
+) -> Result<(), anyhow::Error> {
+    let current_span = tracing::Span::current();
+    let password_hash = web::block(move || {
+        current_span.in_scope(|| {
+            compute_password_hash(password)
+                .context("Failed to compute new password hash")
+        })
+    })
+    .await
+    .context("Failed due to threadpool error")??;
+
+    {
+        use crate::schema::users::dsl::*;
+        use diesel::prelude::*;
+        use diesel::update;
+
+        let mut conn = pool.get().context("Failed to get DB connection from pool")?;
+        let current_span = tracing::Span::current();
+
+        web::block(move || current_span.in_scope(move || {
+            update(users.filter(user_id.eq(uid)))
+                .set(password.eq(password_hash.expose_secret()))
+                .execute(&mut conn)
+                .context("Failed to update password in database")
+        })).await
+        .context("Failed due to threadpool error")??;
+
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument(
+    name = "Verify password hash",
+    skip(expected_password_hash, password_candidate)
 )]
 pub fn verify_password_hash(
     expected_password_hash: Secret<String>,
@@ -108,4 +150,19 @@ pub async fn get_stored_credentials(uname: &str, pool: &Pool<ConnectionManager<P
 
 
     Ok(Some((Secret::new(result.password), result.user_id)))
+}
+
+fn compute_password_hash(
+    password: Secret<String>
+) -> Result<Secret<String>, anyhow::Error> {
+        let salt = SaltString::generate(&mut rand::thread_rng());
+        let password_hash = Argon2::new(
+            Algorithm::Argon2id,
+            Version::V0x13,
+            Params::new(15000, 2, 1, None).unwrap(),
+        )
+        .hash_password(password.expose_secret().as_bytes(), &salt)?
+        .to_string();
+
+        Ok(Secret::new(password_hash))
 }

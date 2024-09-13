@@ -20,13 +20,17 @@ impl TypedSession {
     pub fn get_user_id(&self) -> Result<Option<Uuid>, SessionGetError> {
         self.0.get(Self::USER_ID_KEY)
     }
+
+    pub fn log_out(&self){
+        self.0.purge()
+    }
 }
 
 impl FromRequest for TypedSession {
     type Error = <Session as FromRequest>::Error;
     type Future = Ready<Result<TypedSession, Self::Error>>;
 
-    fn from_request(req: &actix_web::HttpRequest, payload: &mut actix_web::dev::Payload) -> Self::Future {
+    fn from_request(req: &actix_web::HttpRequest, _payload: &mut actix_web::dev::Payload) -> Self::Future {
         ready(Ok(TypedSession(req.get_session())))
     }
 }

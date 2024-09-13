@@ -1,6 +1,5 @@
 use crate::schema::subscription_tokens;
 use crate::schema::subscriptions;
-use crate::schema::users;
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use serde::Deserialize;
