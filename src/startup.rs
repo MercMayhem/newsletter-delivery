@@ -9,6 +9,7 @@ use crate::routes::{admin_dashboard, change_password, change_password_form, home
 use crate::routes::newsletter_delivery::newsletter_delivery;
 use crate::routes::subscribe::subscribe;
 use crate::routes::subscriptions_confirm::confirm;
+use crate::session_state::SessionAuthMiddlewareFactory;
 use actix_session::storage::RedisSessionStore;
 use actix_session::SessionMiddleware;
 use actix_web::cookie::Key;
@@ -109,10 +110,14 @@ async fn run(
             .route("/", web::get().to(home))
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
-            .route("/admin/dashboard", web::get().to(admin_dashboard))
-            .route("/admin/password", web::get().to(change_password_form))
-            .route("/admin/password", web::post().to(change_password))
-            .route("/logout", web::post().to(log_out))
+            .service(
+                web::scope("/admin")
+                    .wrap(SessionAuthMiddlewareFactory::default())
+                    .route("/password", web::post().to(change_password))
+                    .route("/dashboard", web::get().to(admin_dashboard))
+                    .route("/password", web::get().to(change_password_form))
+                    .route("/logout", web::post().to(log_out))
+            )
             .app_data(connection_pool.clone())
             .app_data(email_client.clone())
             .app_data(base_url.clone())

@@ -1636,6 +1636,7 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "fake",
+ "futures-util",
  "linkify",
  "once_cell",
  "quickcheck",

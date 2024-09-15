@@ -19,6 +19,7 @@ config = "0.14.0"
 diesel = { version = "2.2.3", features = ["chrono", "postgres", "r2d2", "uuid"] }
 diesel_migrations = { version = "2.2.0", features = ["postgres"] }
 fake = "2.3"
+futures-util = "0.3.30"
 linkify = "0.10.0"
 once_cell = "1.19.0"
 quickcheck = "1.0.3"

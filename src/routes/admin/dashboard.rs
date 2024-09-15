@@ -4,14 +4,11 @@ use diesel::{r2d2::ConnectionManager, ExpressionMethods, PgConnection, QueryDsl,
 use r2d2::Pool;
 use uuid::Uuid;
 
-use crate::{session_state::TypedSession, utils::{e500, see_other}};
+use crate::{session_state::UserId, utils::e500};
 
-pub async fn admin_dashboard(pool:web::Data<Pool<ConnectionManager<PgConnection>>>,session: TypedSession) -> Result<HttpResponse, actix_web::Error>{
-    let username = if let Some(user_id) = session.get_user_id().map_err(e500)? {
-        get_username(user_id, &pool).await.map_err(|e| e500(e))?
-    } else {
-        return Ok(see_other("/login"));
-    };
+pub async fn admin_dashboard(pool:web::Data<Pool<ConnectionManager<PgConnection>>>, user_id: web::ReqData<UserId>) -> Result<HttpResponse, actix_web::Error>{
+    let user_id = user_id.into_inner();
+    let username = get_username(*user_id, &pool).await.map_err(|e| e500(e))?;
 
     Ok(HttpResponse::Ok()
             .content_type(ContentType::html())
