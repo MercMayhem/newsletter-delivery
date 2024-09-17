@@ -11,12 +11,6 @@ async fn you_must_be_logged_in_to_access_the_admin_dashboard() {
 async fn logout_clears_session_state(){
     let app = spawn_app().await;
 
-    app.post_login(&serde_json::json!({
-        "username": &app.test_user.username,
-        "password": &app.test_user.password
-    }))
-    .await;
-
     let login_body = serde_json::json!({
         "username": &app.test_user.username,
         "password": &app.test_user.password

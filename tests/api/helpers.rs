@@ -193,6 +193,34 @@ impl TestApp {
             .await
             .expect("Failed to execute request")
     }
+
+    pub async fn get_delivery(&self) -> reqwest::Response{
+        self.api_client
+            .get(format!("{}/admin/newsletter", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request")
+    }
+
+    pub async fn get_delivery_html(&self) -> String{
+        self.get_delivery()
+            .await
+            .text()
+            .await
+            .unwrap()
+    }
+
+    pub async fn post_delivery(&self, body: String) -> reqwest::Response
+    {
+        self.api_client
+            .post(&format!("{}/admin/newsletter", &self.address))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .basic_auth(&self.test_user.username, Some(&self.test_user.password))
+            .body(body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
 }
 
 pub fn run_db_migrations(conn: &mut impl MigrationHarness<diesel::pg::Pg>) {

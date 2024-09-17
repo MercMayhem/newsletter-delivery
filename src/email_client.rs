@@ -14,6 +14,10 @@ pub struct EmailClient {
 }
 
 impl EmailClient {
+    #[tracing::instrument(
+        "Sending email to subscriber",
+        skip(self, subject, html_content, text_content)
+    )]
     pub async fn send_email(
         &self,
         recipient: &SubscriberEmail,

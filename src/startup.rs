@@ -3,10 +3,11 @@ use std::time::Duration;
 
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
+use crate::routes::get::newsletter_delivery_form;
 use crate::routes::health_check::health_check;
 use crate::routes::logout::log_out;
+use crate::routes::post::newsletter_delivery;
 use crate::routes::{admin_dashboard, change_password, change_password_form, home, login, login_form};
-use crate::routes::newsletter_delivery::newsletter_delivery;
 use crate::routes::subscribe::subscribe;
 use crate::routes::subscriptions_confirm::confirm;
 use crate::session_state::SessionAuthMiddlewareFactory;
@@ -106,7 +107,6 @@ async fn run(
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
             .route("/subscriptions/confirm", web::get().to(confirm))
-            .route("/newsletters", web::post().to(newsletter_delivery))
             .route("/", web::get().to(home))
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
@@ -117,6 +117,8 @@ async fn run(
                     .route("/dashboard", web::get().to(admin_dashboard))
                     .route("/password", web::get().to(change_password_form))
                     .route("/logout", web::post().to(log_out))
+                    .route("/newsletter", web::get().to(newsletter_delivery_form))
+                    .route("/newsletter", web::post().to(newsletter_delivery))
             )
             .app_data(connection_pool.clone())
             .app_data(email_client.clone())
