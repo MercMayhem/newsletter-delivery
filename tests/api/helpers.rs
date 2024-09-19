@@ -210,13 +210,14 @@ impl TestApp {
             .unwrap()
     }
 
-    pub async fn post_delivery(&self, body: String) -> reqwest::Response
+    pub async fn post_delivery<Body>(&self, body: Body) -> reqwest::Response
+    where 
+        Body: serde::Serialize
     {
         self.api_client
             .post(&format!("{}/admin/newsletter", &self.address))
-            .header("Content-Type", "application/x-www-form-urlencoded")
             .basic_auth(&self.test_user.username, Some(&self.test_user.password))
-            .body(body)
+            .form(&body)
             .send()
             .await
             .expect("Failed to execute request.")

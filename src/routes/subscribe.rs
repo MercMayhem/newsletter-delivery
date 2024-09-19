@@ -139,6 +139,7 @@ pub async fn insert_subscriber(
         InsertSubscriberError::DbPoolErr(err)
     })?;
 
+
     let thread_result = web::block(move || {
         conn.transaction(|conn| {
             diesel::insert_into(subscriptions::table())

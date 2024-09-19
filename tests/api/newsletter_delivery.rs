@@ -1,4 +1,6 @@
-use wiremock::{matchers::{any, method}, Mock, ResponseTemplate};
+use std::{path, time::Duration};
+
+use wiremock::{matchers::{any, method, path}, Mock, ResponseTemplate};
 
 use crate::helpers::{spawn_app, ConfirmationLinks, TestApp};
 
@@ -33,8 +35,13 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
         .mount(&app.email_server)
         .await;
 
-    let newsletter_request_body = "title=Newsletter%20Title&text=Newsletter%20Body&html=Newsletter%20Html";
-    let response = app.post_delivery(newsletter_request_body.to_string()).await;
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter Title",
+        "text": "Newsletter text",
+        "html": "Newsletter html",
+        "idempotency_key": uuid::Uuid::new_v4().to_string()
+    });
+    let response = app.post_delivery(newsletter_request_body).await;
 
     assert_eq!(response.status().as_u16(), 303);
     
@@ -59,8 +66,13 @@ async fn newsletters_are_delivered_to_confirmed_subscribers(){
         .mount(&app.email_server)
         .await;
 
-    let newsletter_request_body = "title=Newsletter%20Title&text=Newsletter%20Body&html=Newsletter%20Html";
-    let response = app.post_delivery(newsletter_request_body.to_string()).await;
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter Title",
+        "text": "Newsletter text",
+        "html": "Newsletter html",
+        "idempotency_key": uuid::Uuid::new_v4().to_string()
+    });
+    let response = app.post_delivery(newsletter_request_body).await;
 
     assert_eq!(response.status().as_u16(), 303);
 }
@@ -77,18 +89,25 @@ async fn newsletter_delivery_returns_400_for_invalid_data(){
 
     let test_cases = vec![
         (
-            "text=Newsletter%20Body&html=Newsletter%20Html",
+            serde_json::json!({
+                "text": "Newsletter text",
+                "html": "Newsletter html",
+                "idempotency_key": uuid::Uuid::new_v4().to_string()
+            }),
             "missing title",   
         ),
 
         (
-            "title=Newsletter%20Title",
+            serde_json::json!({
+                "title": "Newsletter Title",
+                "idempotency_key": uuid::Uuid::new_v4().to_string()
+            }),
             "missing content"
         )
     ];
 
     for (invalid_body, error_message) in test_cases {
-        let response = app.post_delivery(invalid_body.to_string()).await;
+        let response = app.post_delivery(invalid_body).await;
 
         assert_eq!(400, response.status().as_u16(), 
             "The API did not fail with 400 Bad Request when the payload was {}.",
@@ -131,4 +150,68 @@ async fn create_confirmed_subscriber(app: &TestApp) {
         .unwrap()
         .error_for_status()
         .unwrap();
+}
+
+
+#[actix_web::test]
+async fn newsletter_creation_is_idempotent(){
+    let app = spawn_app().await;
+    create_confirmed_subscriber(&app).await;
+
+    app.post_login(&serde_json::json!({
+        "username": &app.test_user.username,
+        "password": &app.test_user.password
+    })).await;
+
+    Mock::given(any())
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter Title",
+        "text": "Newsletter text",
+        "html": "Newsletter html",
+        "idempotency_key": uuid::Uuid::new_v4().to_string()
+    });
+
+    app.post_delivery(&newsletter_request_body).await;
+    app.post_delivery(&newsletter_request_body).await;
+}
+
+#[actix_web::test]
+async fn concurrent_form_submission_is_handled_gracefully() {
+    let app = spawn_app().await;
+    create_confirmed_subscriber(&app).await;
+
+    app.post_login(&serde_json::json!({
+        "username": &app.test_user.username,
+        "password": &app.test_user.password
+    })).await;
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter title",
+        "text": "Newsletter body as plain text",
+        "html": "<p>Newsletter body as HTML</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string()
+    });
+
+
+    let response1 = app.post_delivery(&newsletter_request_body);
+    let response2 = app.post_delivery(&newsletter_request_body);
+
+    let (response1, response2) = tokio::join!(response1, response2);
+
+    assert_eq!(response1.status(), response2.status());
+    assert_eq!(response1.text().await.unwrap(), response2.text().await.unwrap());
 }

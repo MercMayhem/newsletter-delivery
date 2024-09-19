@@ -8,6 +8,7 @@ pub async fn newsletter_delivery_form(flash_messages: IncomingFlashMessages) -> 
     for m in flash_messages.iter() {
         writeln!(msg_html, "<p><i>{}</i></p>", m.content()).unwrap();
     }
+    let idempotency_key = uuid::Uuid::new_v4();
     HttpResponse::Ok().body(format!(r#"
         <!DOCTYPE html>
         <html lang="en">
@@ -29,9 +30,11 @@ pub async fn newsletter_delivery_form(flash_messages: IncomingFlashMessages) -> 
                 <label for="html">HTML:</label><br>
                 <input type="text" id="html" name="html" required><br><br>
 
+                <input hidden type="text" name="idempotency_key" value="{}">
+
                 <input type="submit" value="Submit">
             </form>
         </body>
         </html>
-    "#, msg_html))
+    "#, msg_html, idempotency_key))
 }

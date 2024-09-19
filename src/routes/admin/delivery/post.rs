@@ -5,7 +5,7 @@ use serde::Deserialize;
 use diesel::{r2d2::{ConnectionManager, Pool}, PgConnection};
 use diesel::prelude::*;
 
-use crate::{email_client::EmailClient, models::Subscription, routes::admin::dashboard::get_username, session_state::UserId, utils::see_other};
+use crate::{email_client::EmailClient, idempotency::{get_saved_response, persistence::{save_response, try_processing, NextAction}, IdempotencyKey}, models::Subscription, routes::admin::dashboard::get_username, session_state::UserId, utils::see_other};
 use crate::domain::subscriber_email::SubscriberEmail;
 
 use crate::routes::subscribe::error_chain_fmt;
@@ -36,7 +36,8 @@ impl ResponseError for PublishError {
 pub struct BodyData{
     title: String,
     text: String,
-    html: String
+    html: String,
+    idempotency_key: String
 }
 
 
@@ -51,11 +52,23 @@ pub struct ConfirmedSubscriber{
 )]
 pub async fn newsletter_delivery(body: web::Form<BodyData>, pool: web::Data<Pool<ConnectionManager<PgConnection>>>, email_client: web::Data<EmailClient>, request: HttpRequest, user_id: web::ReqData<UserId>) -> Result<HttpResponse, PublishError>{
 
+    let BodyData{ title, text, html, idempotency_key } = body.0;
+    let idempotency_key: IdempotencyKey = idempotency_key.try_into().map_err(PublishError::UnexpectedError)?;
+
+
     let user_id = user_id.into_inner();
     tracing::Span::current().record("user_id", &tracing::field::display(&*user_id));
 
     let username = get_username(*user_id, &pool).await.map_err(PublishError::UnexpectedError)?;
     tracing::Span::current().record("username", &tracing::field::display(username));
+
+    match try_processing(&pool, &idempotency_key, *user_id).await.map_err(PublishError::UnexpectedError)?{
+        NextAction::StartProcessing => {},
+        NextAction::ReturnSavedResponse(saved_response) => {
+            FlashMessage::info("Successfully sent newsletter.").send();
+            return Ok(saved_response);
+        }
+    }
 
     let subscriptions = get_confirmed_subscribers(&pool).await?;
     
@@ -65,9 +78,9 @@ pub async fn newsletter_delivery(body: web::Form<BodyData>, pool: web::Data<Pool
                 email_client
                     .send_email(
                         &subscriber.email,
-                        &body.title,
-                        &body.html,
-                        &body.text
+                        &title,
+                        &html,
+                        &text
                     )
                     .await
                     .with_context(|| {
@@ -91,7 +104,12 @@ pub async fn newsletter_delivery(body: web::Form<BodyData>, pool: web::Data<Pool
 
 
     FlashMessage::info("Successfully sent newsletter.").send();
-    Ok(see_other("/admin/newsletter"))
+    let response = see_other("/admin/newsletter");
+    let response = save_response(&pool, &idempotency_key, *user_id, response)
+                    .await
+                    .map_err(PublishError::UnexpectedError)?;
+
+    Ok(response)
 }
 
 #[tracing::instrument(
