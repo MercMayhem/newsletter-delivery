@@ -21,6 +21,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    issue_delivery_queue (newsletter_issue_id, subscriber_email) {
+        newsletter_issue_id -> Uuid,
+        subscriber_email -> Text,
+    }
+}
+
+diesel::table! {
+    newsletter_issues (newsletter_issue_id) {
+        newsletter_issue_id -> Uuid,
+        title -> Text,
+        text -> Text,
+        html -> Text,
+        published_at -> Text,
+    }
+}
+
+diesel::table! {
     subscription_tokens (subscription_token) {
         subscription_token -> Text,
         subscriber_id -> Uuid,
@@ -46,10 +63,13 @@ diesel::table! {
 }
 
 diesel::joinable!(idempotency -> users (user_id));
+diesel::joinable!(issue_delivery_queue -> newsletter_issues (newsletter_issue_id));
 diesel::joinable!(subscription_tokens -> subscriptions (subscriber_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     idempotency,
+    issue_delivery_queue,
+    newsletter_issues,
     subscription_tokens,
     subscriptions,
     users,

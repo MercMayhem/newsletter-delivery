@@ -1,4 +1,6 @@
 use crate::schema::idempotency;
+use crate::schema::issue_delivery_queue;
+use crate::schema::newsletter_issues;
 use crate::schema::sql_types::HeaderPair;
 use crate::schema::subscription_tokens;
 use crate::schema::subscriptions;
@@ -16,6 +18,23 @@ use diesel::sql_types::Record;
 use diesel::sql_types::Text;
 use serde::Deserialize;
 use uuid::Uuid;
+
+#[derive(Insertable, Queryable)]
+#[diesel(table_name = newsletter_issues)]
+pub struct NewsletterIssue{
+    pub newsletter_issue_id: Uuid,
+    pub title: String,
+    pub text: String,
+    pub html: String,
+    pub published_at: String
+}
+
+#[derive(Insertable, Queryable)]
+#[diesel(table_name = issue_delivery_queue)]
+pub struct IssueDeliveryQueue{
+    pub newsletter_issue_id: Uuid,
+    pub subscriber_email: String,
+}
 
 #[derive(Queryable)]
 pub struct SavedResponse {

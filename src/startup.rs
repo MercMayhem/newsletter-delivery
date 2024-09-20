@@ -37,6 +37,7 @@ impl Application {
             .email_client
             .sender()
             .expect("Failed to get valid sender email");
+
         let email_client = EmailClient::new(
             config.email_client.base_url.clone(),
             sender_email,

@@ -68,12 +68,12 @@ impl EmailClient {
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct SendEmailRequest<'a> {
-    from: &'a str,
-    to: &'a str,
-    subject: &'a str,
-    html_body: &'a str,
-    text_body: &'a str,
+pub struct SendEmailRequest<'a> {
+    pub from: &'a str,
+    pub to: &'a str,
+    pub subject: &'a str,
+    pub html_body: &'a str,
+    pub text_body: &'a str,
 }
 
 #[cfg(test)]
