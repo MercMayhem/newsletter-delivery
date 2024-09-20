@@ -1,4 +1,3 @@
-use std::{path, time::Duration};
 
 use wiremock::{matchers::{any, method, path}, Mock, ResponseTemplate};
 

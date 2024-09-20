@@ -39,7 +39,7 @@ pub async fn get_saved_response(
 
     if let Some(r) = saved_response {
         if r.response_status_code.is_none(){
-            return Err(anyhow::anyhow!("Failed to retrieve response."))
+            return Ok(None)
         }
 
         let status_code = StatusCode::from_u16(
@@ -149,12 +149,13 @@ pub async fn try_processing(pool: &Pool<ConnectionManager<PgConnection>>, idempo
     if rows_affected > 0{
         Ok(NextAction::StartProcessing)
     } else {
-        let saved_response = get_saved_response(pool, idempotency_key_val, uid)
-            .await?
-            .ok_or_else(||
-                anyhow::anyhow!("We expected a saved response, we didn't find it")
-            )?;
+        let mut saved_response = get_saved_response(pool, idempotency_key_val, uid)
+            .await?;
 
-        Ok(NextAction::ReturnSavedResponse(saved_response))
+        while saved_response.is_none(){
+            saved_response = get_saved_response(pool, idempotency_key_val, uid).await?;
+        }
+
+        Ok(NextAction::ReturnSavedResponse(saved_response.unwrap()))
     }
 }
