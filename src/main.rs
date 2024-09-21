@@ -45,6 +45,8 @@ fn report_exit(
         },
 
         Err(e) => {
+            dbg!(&e);
+
             tracing::error!(
             error.cause_chain = ?e,
             error.message = %e,

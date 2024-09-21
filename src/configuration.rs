@@ -4,6 +4,7 @@ use secrecy::Secret;
 use serde::Deserialize;
 use serde_aux::field_attributes::deserialize_number_from_string;
 
+use crate::block_email_client::BlockEmailClient;
 use crate::domain::subscriber_email::SubscriberEmail;
 
 #[derive(Deserialize, Clone)]
@@ -20,6 +21,20 @@ pub struct EmailClientSettings {
     pub sender_email: String,
     pub authorization_token: Secret<String>,
     pub timeout: u64,
+}
+
+impl EmailClientSettings{
+    pub fn blocking_client(self) -> BlockEmailClient{
+        let sender_email = self.sender().expect("Invalid sender email address.");
+        let timeout = self.timeout;
+
+        BlockEmailClient::new(
+            self.base_url,
+            sender_email,
+            self.authorization_token,
+            timeout
+        )
+    }
 }
 
 impl EmailClientSettings {

@@ -1,3 +1,4 @@
+use actix_web::web;
 use argon2::password_hash::SaltString;
 use argon2::Algorithm;
 use argon2::Params;
@@ -7,7 +8,10 @@ use argon2::Version;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::{Connection, PgConnection, RunQueryDsl};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use newsletter::block_email_client::BlockEmailClient;
 use newsletter::configuration::{get_configuration, DatabaseSettings};
+use newsletter::issue_delivery_worker::try_execute_task;
+use newsletter::issue_delivery_worker::ExecutionOutcome;
 use newsletter::startup::{get_connection_pool, Application};
 use newsletter::telemetry::{get_subscriber, init_subscriber};
 use once_cell::sync::Lazy;
@@ -82,7 +86,7 @@ pub struct TestApp {
     pub email_server: MockServer,
     pub port: u16,
     pub test_user: TestUser,
-    pub api_client: reqwest::Client
+    pub api_client: reqwest::Client,
 }
 
 impl TestApp {
@@ -288,7 +292,7 @@ pub async fn spawn_app() -> TestApp {
         email_server,
         port,
         test_user: TestUser::generate(),
-        api_client: client
+        api_client: client,
     };
 
     test_app.test_user.store(&test_app.db_pool);

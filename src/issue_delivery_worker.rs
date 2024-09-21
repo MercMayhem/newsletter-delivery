@@ -11,20 +11,7 @@ pub async fn run_worker_until_stopped(
     configuration: Settings
 ) -> Result<(), anyhow::Error>{
     let connection_pool = get_connection_pool(&configuration.database);
-
-    let sender_email = configuration
-        .email_client
-        .sender()
-        .expect("Invalid sender email address");
-
-    let timeout = configuration.email_client.timeout;
-
-    let email_client = BlockEmailClient::new(
-        configuration.email_client.base_url,
-        sender_email,
-        configuration.email_client.authorization_token,
-        timeout,
-    );
+    let email_client = configuration.email_client.blocking_client();
 
     worker_loop(connection_pool, email_client).await
 }
@@ -59,7 +46,7 @@ async fn worker_loop(pool: Pool<ConnectionManager<PgConnection>>, email_client: 
     }
 }
 
-enum ExecutionOutcome{
+pub enum ExecutionOutcome{
     TaskCompleted,
     EmptyQueue
 }
@@ -71,7 +58,7 @@ enum ExecutionOutcome{
         subscriber_email=tracing::field::Empty
     )
 )]
-fn try_execute_task(
+pub fn try_execute_task(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
     email_client: &BlockEmailClient
 ) -> Result<ExecutionOutcome, anyhow::Error> {

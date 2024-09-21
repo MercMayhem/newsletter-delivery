@@ -1,4 +1,6 @@
 
+use std::time::Duration;
+
 use wiremock::{matchers::{any, method, path}, Mock, ResponseTemplate};
 
 use crate::helpers::{spawn_app, ConfirmationLinks, TestApp};
@@ -45,7 +47,8 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
     assert_eq!(response.status().as_u16(), 303);
     
     let html = app.get_delivery_html().await;
-    assert!(html.contains("<p><i>Successfully sent newsletter.</i></p>"))
+    assert!(html.contains("<p><i>Successfully sent newsletter.</i></p>"));
+    tokio::time::sleep(Duration::from_secs(10)).await;
 }
 
 #[actix_web::test]
@@ -74,6 +77,7 @@ async fn newsletters_are_delivered_to_confirmed_subscribers(){
     let response = app.post_delivery(newsletter_request_body).await;
 
     assert_eq!(response.status().as_u16(), 303);
+    tokio::time::sleep(Duration::from_secs(10)).await;
 }
 
 #[actix_web::test]
@@ -179,6 +183,8 @@ async fn newsletter_creation_is_idempotent(){
 
     app.post_delivery(&newsletter_request_body).await;
     app.post_delivery(&newsletter_request_body).await;
+
+    tokio::time::sleep(Duration::from_secs(10)).await;
 }
 
 #[actix_web::test]
@@ -213,4 +219,6 @@ async fn concurrent_form_submission_is_handled_gracefully() {
 
     assert_eq!(response1.status(), response2.status());
     assert_eq!(response1.text().await.unwrap(), response2.text().await.unwrap());
+
+    tokio::time::sleep(Duration::from_secs(10)).await;
 }
