@@ -14,7 +14,9 @@ async fn newsletter_form_on_get_endpoint_works(){
     .await;
 
     let response = app.get_delivery().await;
-    assert_eq!(response.status().as_u16(), 200)
+    assert_eq!(response.status().as_u16(), 200);
+
+    
 }
 
 #[actix_web::test]
@@ -45,7 +47,9 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
     assert_eq!(response.status().as_u16(), 303);
     
     let html = app.get_delivery_html().await;
-    assert!(html.contains("<p><i>Successfully sent newsletter.</i></p>"))
+    assert!(html.contains("<p><i>Successfully sent newsletter.</i></p>"));
+
+    app.dispatch_all_pending_emails().await;
 }
 
 #[actix_web::test]
@@ -74,6 +78,8 @@ async fn newsletters_are_delivered_to_confirmed_subscribers(){
     let response = app.post_delivery(newsletter_request_body).await;
 
     assert_eq!(response.status().as_u16(), 303);
+
+    app.dispatch_all_pending_emails().await;
 }
 
 #[actix_web::test]
@@ -179,6 +185,8 @@ async fn newsletter_creation_is_idempotent(){
 
     app.post_delivery(&newsletter_request_body).await;
     app.post_delivery(&newsletter_request_body).await;
+
+    app.dispatch_all_pending_emails().await;
 }
 
 #[actix_web::test]
@@ -213,4 +221,6 @@ async fn concurrent_form_submission_is_handled_gracefully() {
 
     assert_eq!(response1.status(), response2.status());
     assert_eq!(response1.text().await.unwrap(), response2.text().await.unwrap());
+
+    app.dispatch_all_pending_emails().await;
 }

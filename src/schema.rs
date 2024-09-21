@@ -24,6 +24,7 @@ diesel::table! {
     issue_delivery_queue (newsletter_issue_id, subscriber_email) {
         newsletter_issue_id -> Uuid,
         subscriber_email -> Text,
+        state -> Nullable<Text>,
     }
 }
 

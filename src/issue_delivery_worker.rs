@@ -5,7 +5,7 @@ use diesel::{r2d2::ConnectionManager, Connection, PgConnection};
 use r2d2::{Pool, PooledConnection};
 use uuid::Uuid;
 
-use crate::{block_email_client::BlockEmailClient, configuration::Settings, domain::subscriber_email::SubscriberEmail, models::{IssueDeliveryQueue, NewsletterIssue}, startup::get_connection_pool};
+use crate::{configuration::Settings, domain::subscriber_email::SubscriberEmail, email_client::EmailClient, models::{IssueDeliveryQueue, NewsletterIssue}, startup::get_connection_pool};
 
 pub async fn run_worker_until_stopped(
     configuration: Settings
@@ -19,7 +19,7 @@ pub async fn run_worker_until_stopped(
 
     let timeout = configuration.email_client.timeout;
 
-    let email_client = BlockEmailClient::new(
+    let email_client = EmailClient::new(
         configuration.email_client.base_url,
         sender_email,
         configuration.email_client.authorization_token,
@@ -29,7 +29,7 @@ pub async fn run_worker_until_stopped(
     worker_loop(connection_pool, email_client).await
 }
 
-async fn worker_loop(pool: Pool<ConnectionManager<PgConnection>>, email_client: BlockEmailClient) -> Result<(), anyhow::Error>{
+async fn worker_loop(pool: Pool<ConnectionManager<PgConnection>>, email_client: EmailClient) -> Result<(), anyhow::Error>{
 
     loop{
         let mut conn = pool.get()?;
@@ -59,7 +59,7 @@ async fn worker_loop(pool: Pool<ConnectionManager<PgConnection>>, email_client: 
     }
 }
 
-enum ExecutionOutcome{
+pub enum ExecutionOutcome{
     TaskCompleted,
     EmptyQueue
 }
@@ -71,9 +71,9 @@ enum ExecutionOutcome{
         subscriber_email=tracing::field::Empty
     )
 )]
-fn try_execute_task(
+pub fn try_execute_task(
     conn: &mut PooledConnection<ConnectionManager<PgConnection>>,
-    email_client: &BlockEmailClient
+    email_client: &EmailClient
 ) -> Result<ExecutionOutcome, anyhow::Error> {
     let task = dequeue_task(conn)?;
     if task.is_none(){
@@ -89,14 +89,18 @@ fn try_execute_task(
         match SubscriberEmail::parse(email.clone()){
             Ok(email) => {
                 let issue = get_issue(conn, issue_id)?;
-                if let Err(e) = email_client
-                    .send_email(
-                        &email,
-                        &issue.title,
-                        &issue.html,
-                        &issue.text,
-                    )
-                {
+
+                let rt = tokio::runtime::Handle::current();
+                let test = rt.block_on(async {
+                    email_client.send_email(
+                            &email,
+                            &issue.title,
+                            &issue.html,
+                            &issue.text,
+                    ).await
+                });
+
+                if let Err(e) = test{
                     tracing::error!(
                         error.cause_chain = ?e,
                         error.message = %e,
