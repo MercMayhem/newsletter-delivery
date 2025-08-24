@@ -2,7 +2,8 @@ use std::net::TcpListener;
 use std::time::Duration;
 
 use crate::configuration::{DatabaseSettings, Settings};
-use crate::email_client::EmailClient;
+use crate::diesel_adapter::subscription_repository::DieselSubscriptionRepository;
+use crate::email_client::{EmailClient, SubscriberConfirmationEmailer};
 use crate::routes::get::newsletter_delivery_form;
 use crate::routes::health_check::health_check;
 use crate::routes::logout::log_out;
@@ -10,6 +11,7 @@ use crate::routes::post::newsletter_delivery;
 use crate::routes::{admin_dashboard, change_password, change_password_form, home, login, login_form};
 use crate::routes::subscribe::subscribe;
 use crate::routes::subscriptions_confirm::confirm;
+use crate::services::subscription::NewsletterSubscriptionService;
 use crate::session_state::SessionAuthMiddlewareFactory;
 use actix_session::storage::RedisSessionStore;
 use actix_session::SessionMiddleware;
@@ -22,11 +24,17 @@ use diesel::PgConnection;
 use secrecy::{ExposeSecret, Secret};
 use tracing_actix_web::TracingLogger;
 
+pub type SubscriptionServiceType = NewsletterSubscriptionService<
+    DieselSubscriptionRepository,
+    SubscriberConfirmationEmailer
+>;
+
 pub struct Application {
     port: u16,
     server: Server,
 }
 
+#[derive(Clone)]
 pub struct ApplicationBaseUrl(pub String);
 
 impl Application {
@@ -90,6 +98,14 @@ async fn run(
     let email_client = web::Data::new(email_client);
     let base_url = web::Data::new(ApplicationBaseUrl(base_url));
 
+    let diesel_subscription_repository = DieselSubscriptionRepository::new(connection_pool.clone());
+    let confirmation_emailer = SubscriberConfirmationEmailer::new(base_url.clone(), email_client.clone());
+
+    let newsletter_subscription_service = web::Data::new(NewsletterSubscriptionService{
+        subscription_repository: diesel_subscription_repository,
+        email_sender: confirmation_emailer
+    });
+
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
 
     let key = Key::from(secret_key.expose_secret().as_bytes());
@@ -106,8 +122,8 @@ async fn run(
             .wrap(SessionMiddleware::new(redis_store.clone(), key.clone()))
             .wrap(TracingLogger::default())
             .route("/health_check", web::get().to(health_check))
-            .route("/subscriptions", web::post().to(subscribe))
-            .route("/subscriptions/confirm", web::get().to(confirm))
+            .route("/subscriptions", web::post().to(subscribe::<SubscriptionServiceType>))
+            .route("/subscriptions/confirm", web::get().to(confirm::<SubscriptionServiceType>))
             .route("/", web::get().to(home))
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
@@ -124,6 +140,7 @@ async fn run(
             .app_data(connection_pool.clone())
             .app_data(email_client.clone())
             .app_data(base_url.clone())
+            .app_data(newsletter_subscription_service.clone())
     })
     .listen(listener)?
     .run();

@@ -6,7 +6,7 @@ use diesel::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::schema::subscriptions;
+use crate::{schema::subscriptions, traits::SubscriptionService};
 use crate::{models::SubscriptionToken, schema::subscription_tokens::dsl::*};
 
 #[derive(Deserialize)]
@@ -14,42 +14,15 @@ pub struct Parameters {
     subscription_token: String,
 }
 
-#[tracing::instrument(name = "Confirm a pending subscriber", skip(parameters))]
-pub async fn confirm(
+#[tracing::instrument(name = "Confirm a pending subscriber", skip(parameters, subscription_service))]
+pub async fn confirm<S: SubscriptionService>(
     parameters: web::Query<Parameters>,
-    pool: web::Data<Pool<ConnectionManager<PgConnection>>>,
+    // pool: web::Data<Pool<ConnectionManager<PgConnection>>>,
+    subscription_service: web::Data<S>,
 ) -> HttpResponse {
-    let mut conn = pool.get().unwrap();
-
-    let result = web::block(move || {
-        subscription_tokens
-            .filter(subscription_token.eq(parameters.subscription_token.clone()))
-            .first::<SubscriptionToken>(&mut conn)
-    })
-    .await
-    .unwrap();
-
-    let id: Uuid = match result {
-        Ok(saved) => {
-            tracing::info!("Retrieved subscriber id");
-            saved.subscriber_id
-        }
-
-        Err(_) => {
-            tracing::error!("Failed to retrieve subscriber_id from subscription_tokens table using subscription_token");
-            return HttpResponse::InternalServerError().finish();
-        }
-    };
-
-    let mut conn = pool.get().unwrap();
-    let result = web::block(move || {
-        diesel::update(subscriptions::dsl::subscriptions)
-            .filter(subscriptions::dsl::id.eq(id))
-            .set(subscriptions::dsl::status.eq("confirmed"))
-            .execute(&mut conn)
-    })
-    .await
-    .unwrap();
+    let result = subscription_service
+        .confirm_subscription(&parameters.subscription_token)
+        .await;
 
     match result {
         Ok(_) => {

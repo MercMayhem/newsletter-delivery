@@ -12,3 +12,6 @@ pub mod utils;
 pub mod ipchecker;
 pub mod idempotency;
 pub mod issue_delivery_worker;
+pub mod traits;
+pub mod diesel_adapter;
+pub mod services;

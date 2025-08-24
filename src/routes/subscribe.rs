@@ -7,7 +7,7 @@ use diesel::{
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use uuid::Uuid;
 
-use crate::schema::subscription_tokens::dsl::*;
+use crate::{schema::subscription_tokens::dsl::*, traits::SubscriptionService};
 use crate::schema::subscriptions::dsl::*;
 use crate::{
     domain::{
@@ -59,29 +59,23 @@ impl ResponseError for SubscribeError{
 
 #[tracing::instrument(
     name = "Adding a new subscriber",
-    skip(form, pool, email_client, base_url),
+    skip(form, subscription_service),
     fields(
         subscriber_email = %form.email,
         subscriber_name= %form.name
     ) 
 )]
-pub async fn subscribe(
+pub async fn subscribe<S: SubscriptionService>(
     form: web::Form<SubscribeFormData>,
-    pool: web::Data<Pool<ConnectionManager<PgConnection>>>,
-    email_client: web::Data<EmailClient>,
-    base_url: web::Data<ApplicationBaseUrl>,
+    // pool: web::Data<Pool<ConnectionManager<PgConnection>>>,
+    // email_client: web::Data<EmailClient>,
+    // base_url: web::Data<ApplicationBaseUrl>,
+    subscription_service: web::Data<S>,
 ) -> Result<HttpResponse, SubscribeError>{
-    let new_subscriber: NewSubscriber = form.0.try_into().map_err(SubscribeError::ValidationError)?;
-    let subscriber_token = insert_subscriber(&pool, &new_subscriber).await?;
-    tracing::info!("New subscriber has been saved successfully.");
-    send_confirmation_mail(
-        &email_client,
-        new_subscriber,
-        &base_url.0,
-        &subscriber_token,
-    )
-    .await?;
-    tracing::info!("Successfully sent confirmation mail");
+    subscription_service
+        .create_subscription(form.0)
+        .await?;
+
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -176,7 +170,7 @@ pub async fn insert_subscriber(
 )]
 pub async fn send_confirmation_mail(
     email_client: &EmailClient,
-    new_subscriber: NewSubscriber,
+    new_subscriber: &NewSubscriber,
     base_url: &String,
     sub_token: &str,
 ) -> Result<(), reqwest::Error> {

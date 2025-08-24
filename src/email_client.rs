@@ -4,7 +4,7 @@ use reqwest::Client;
 use secrecy::{ExposeSecret, Secret};
 use serde::Serialize;
 
-use crate::domain::subscriber_email::SubscriberEmail;
+use crate::{domain::{new_subscriber::NewSubscriber, subscriber_email::SubscriberEmail}, routes::subscribe::send_confirmation_mail, startup::ApplicationBaseUrl, traits::EmailSender};
 
 #[derive(Clone)]
 pub struct EmailClient {
@@ -75,6 +75,35 @@ pub struct SendEmailRequest<'a> {
     pub subject: &'a str,
     pub html_body: &'a str,
     pub text_body: &'a str,
+}
+
+#[derive(Clone)]
+pub struct SubscriberConfirmationEmailer {
+    application_base_url: actix_web::web::Data<ApplicationBaseUrl>,
+    email_client: actix_web::web::Data<EmailClient>,
+}
+
+impl SubscriberConfirmationEmailer {
+    pub fn new(
+        application_base_url: actix_web::web::Data<ApplicationBaseUrl>,
+        email_client: actix_web::web::Data<EmailClient>,
+    ) -> Self {
+        Self {
+            application_base_url,
+            email_client,
+        }
+    }
+}
+
+impl EmailSender for SubscriberConfirmationEmailer {
+    async fn send_confirmation(&self, subscriber: &NewSubscriber, confirmation_token: &String) -> Result<(), reqwest::Error> {
+        send_confirmation_mail(
+            &self.email_client,
+            subscriber,
+            &self.application_base_url.0,
+            confirmation_token,
+        ).await
+    }
 }
 
 #[cfg(test)]
